@@ -132,12 +132,6 @@ def is_valid_sudoku(assignment):
     boxes_ok = all(set(grid[br * 3 + i][bc * 3 + j] for i in range(3) for j in range(3)) == full for br in range(3) for bc in range(3))
     return rows_ok and cols_ok and boxes_ok
 
-
-def is_valid_map(neighbors, assignment):
-    if assignment is None or len(assignment) != len(neighbors) or any(assignment[x] is None for x in neighbors):
-        return False
-    return all(assignment[x] != assignment[y] for x in neighbors for y in neighbors[x])
-
 LARGEFONT =("Verdana", 35)
 
 class tkinterApp(tk.Tk):
@@ -150,7 +144,7 @@ class tkinterApp(tk.Tk):
         container.grid_columnconfigure(0, weight = 1)
         self.frames = {}  
 
-        for F in (StartPage, LoadingPage, PlotPage, Page2):
+        for F in (StartPage, LoadingPage, PlotPage, Input):
             frame = F(container, self)
             self.frames[F] = frame 
             frame.grid(row = 0, column = 0, sticky ="nsew")
@@ -180,7 +174,7 @@ class StartPage(tk.Frame):
         header.pack(side="top")
         label.pack(side="top")
         tk.Radiobutton(self, text="Compare AC-3 with AC-3 modification with ready to use data", variable=v, value=1, command=lambda : controller.show_frame(LoadingPage)).pack(anchor=tk.W)
-        tk.Radiobutton(self, text="Input your own data", variable=v, value=2, command=lambda : controller.show_frame(Page2)).pack(anchor=tk.W)
+        tk.Radiobutton(self, text="Input your own data", variable=v, value=2, command=lambda : controller.show_frame(Input)).pack(anchor=tk.W)
 
 class LoadingPage(tk.Frame):
     def __init__(self, parent, controller):
@@ -242,18 +236,72 @@ class PlotPage(tk.Frame):
         self.ax.grid(True)
         self.canvas.draw()
 
-class Page2(tk.Frame): 
+class Input(tk.Frame):
     def __init__(self, parent, controller):
         tk.Frame.__init__(self, parent)
-        label = ttk.Label(self, text ="Page 2", font = LARGEFONT)
-        label.grid(row = 0, column = 4, padx = 10, pady = 10)
-        button1 = ttk.Button(self, text ="Page 1", command = lambda : controller.show_frame(LoadingPage))
+        self.controller = controller
 
-        button1.grid(row = 1, column = 1, padx = 10, pady = 10)
-        button2 = ttk.Button(self, text ="Startpage",command = lambda : controller.show_frame(StartPage))
+        board = tk.Frame(self, bg="black", padx=2, pady=2)
+        board.pack(pady=20)
 
-        button2.grid(row = 2, column = 1, padx = 10, pady = 10)
+        vcmd = (self.register(self._validate), "%P")  
+        self.cells = [[None] * 9 for _ in range(9)]
 
+        for r in range(9):
+            for c in range(9):
+                e = tk.Entry(board, width=2, justify="center", font=("Arial", 18, "bold"), validate="key", validatecommand=vcmd, relief="flat", bg="white")
+
+                padx = (1, 4) if c in (2, 5) else 1
+                pady = (1, 4) if r in (2, 5) else 1
+                e.grid(row=r, column=c, padx=padx, pady=pady, ipady=4)
+                self.cells[r][c] = e
+
+        btns = tk.Frame(self)
+        btns.pack(pady=5)
+        ttk.Button(btns, text="Clear", command=self.clear).pack(side="left", padx=5)
+        ttk.Button(btns, text="Back", command=lambda: controller.show_frame(StartPage)).pack(side="left", padx=5)
+        ttk.Button(btns, text="Solve", command=self.solve).pack(side="left", padx=5)
+
+        self.result_label = tk.Label(self, text="", font=("Consolas", 10), justify="left")
+        self.result_label.pack(side="top", anchor="nw")
+
+    def _validate(self, new_text):
+        return new_text == "" or (len(new_text) == 1 and new_text in "123456789")
+
+    def solve(self):
+        puzzle = self.get_puzzle()          
+
+        lines = [f"{'algoritma':10s}{'arcs':>10s}{'checks':>10s}{'backtracks':>12s}{'ms':>10s}  valid"]
+        for algo_name, ac_fn in [("AC-3", ac3), ("AC-New", ac_new)]:
+            result, counter, seconds = solve(lambda: build_sudoku(self.get_puzzle()), ac_fn)
+            ms = seconds * 1000
+            ok = is_valid_sudoku(result)
+            lines.append(f"{algo_name:10s}{counter['arcs']:10d}{counter['checks']:10d}{counter['backtracks']:12d}{seconds * 1000:10.2f}  {ok}")            
+        self.result_label.config(text="\n".join(lines))
+        if result is None:
+            return
+
+        for r in range(9):
+            for c in range(9):
+                cell = self.cells[r][c]
+                if puzzle[r * 9 + c] == "0":
+                    cell.delete(0, "end")
+                    cell.insert(0, str(result[(r, c)]))
+                    cell.config(fg="blue")
+    
+    def clear(self):
+        for row in self.cells:
+            for e in row:
+                e.delete(0, "end")
+
+        self.result_label.config(text="")
+
+    def get_puzzle(self):
+        return "".join(self.cells[r][c].get() or "0" for r in range(9) for c in range(9))
+    
 app = tkinterApp()
+app.geometry("600x550")
 app.title("Sudoku Solver")
-app.mainloop()
+
+if __name__ == "__main__":
+    app.mainloop()
